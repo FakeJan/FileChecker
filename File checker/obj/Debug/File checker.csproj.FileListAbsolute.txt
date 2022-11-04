@@ -1,0 +1,24 @@
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\bin\Debug\File checker.exe.config
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\bin\Debug\File checker.exe
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\bin\Debug\File checker.pdb
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\bin\Debug\Aspose.Words.dll
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\bin\Debug\Aspose.Words.Pdf2Word.dll
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\bin\Debug\BouncyCastle.Crypto.dll
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\bin\Debug\itextsharp.dll
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\bin\Debug\Syncfusion.Compression.Portable.dll
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\bin\Debug\Syncfusion.Licensing.dll
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\bin\Debug\Syncfusion.Pdf.Portable.dll
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\bin\Debug\System.Text.Encoding.CodePages.dll
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\bin\Debug\Aspose.Words.xml
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\bin\Debug\itextsharp.xml
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\bin\Debug\Syncfusion.Compression.Portable.xml
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\bin\Debug\Syncfusion.Pdf.Portable.xml
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\obj\Debug\File checker.csproj.AssemblyReference.cache
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\obj\Debug\File checker.csproj.SuggestedBindingRedirects.cache
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\obj\Debug\File_checker.Form1.resources
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\obj\Debug\File_checker.Properties.Resources.resources
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\obj\Debug\File checker.csproj.GenerateResource.cache
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\obj\Debug\File checker.csproj.CoreCompileInputs.cache
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\obj\Debug\File checker.csproj.CopyComplete
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\obj\Debug\File checker.exe
+C:\Users\ivaneticj\Desktop\Work\CheckFiles\Program\CheckFilesExe\File checker\File checker\obj\Debug\File checker.pdb
