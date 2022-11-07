@@ -1,13 +1,25 @@
 ﻿using Aspose.Words;
+using CsvHelper;
+using CsvHelper.Configuration;
 using iTextSharp.text.exceptions;
 using iTextSharp.text.pdf;
+using iTextSharp.text.pdf.parser;
 using Syncfusion.Pdf.Parsing;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows.Forms;
+using static File_checker.FileHash;
+using static System.Net.WebRequestMethods;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement;
+using File = System.IO.File;
+using Path = System.IO.Path;
+
 namespace File_checker
 {
     public partial class Form1 : Form
@@ -17,31 +29,69 @@ namespace File_checker
             InitializeComponent();
         }
 
+        // file status
         private void button1_Click(object sender, EventArgs e)
         {
             GetFileStatus();
         }
 
-        public static void GetFileStatus()
+        // works for word, excel, powerpoint, pdf, onenote
+        public void GetFileStatus()
         {
             string path = ReturnPath();
             string[] files = Directory.GetFiles(path, "*", SearchOption.AllDirectories);
-
-            TableBuilder tb = new TableBuilder();
-            tb.AddRow("FileName", "Status");
-
             // if first true -> access restriction, if both true -> password protected
+            var first = false;
             foreach (var file in files)
             {
-                //word, excel, powerpoint, pdf, onenote
                 string[] words = file.Split('\\');
+                string[] ListOfSuspiciousFileExtensions = { "..zip", ".cawwcca", ".ecc", ".ezz", ".exx", ".zzz", ".xyz", ".aaa", ".abc", ".ccc", ".vvv", ".xxx", ".ttt", ".micro", ".encrypted", ".locked", ".crypto", ".crinf", ".r5a", ".XRNT", ".XTBL", ".crypt", ".R16M01D05", ".pzdc", ".good", ".LOL!", ".OMG!", ".RDM", ".RRK", ".encryptedRSA", ".crjoker", ".EnCiPhErEd", ".LeChiffre", ".keybtc@inbox_com", ".0x0", ".bleep", ".1999", ".vault", ".HA3", ".toxcrypt", ".magic", ".SUPERCRYPT", ".CTBL", ".CTB2", ".locky", ".cerber", ".coverton", ".cryp1", ".crypz", ".encrypt", ".frtrss", ".locky", ".rsnslocked", ".silent", ".zcrypt", ".zepto" };
+                string[] ListOfSuspiciousFileNames = { "!recover!", ".cryptotorlocker", ".hydracrypt_ID", "_recover_", "decrypt my file", "decryptmyfiles", "files_are_encrypted", "rec0ver", "recover", "restore_fi", "want your files back", "warning-!!", "_crypt", "_help_instruct", "confirmation.key", "cryptolocker", "de_crypt_readme", "decrypt_instruct", "decrypt-instruct", "enc_files.txt", "help_decrypt", "help_file_", "help_instructions.", "help_recover", "help_restore", "help_your_file", "how to decrypt", "how_recover", "how_to_decrypt", "how_to_recover", "howto_restore", "howtodecrypt", "install_tor", "last_chance.txt", "message.txt", "readme_decrypt", "readme_for_decrypt", "recovery_file.txt", "recovery_key.txt", "recovery+", "vault.hta", "vault.key", "vault.txt", "your_files.url" };
+                string[] ListOfDeniedFileExtensions = { ".dll", ".exe", ".bat", ".cmd", ".vbs", ".reg", ".url", ".msu", ".zip", ".7z", ".tmp" };
                 bool accessRestricted, passWordProtected;
+
                 if (words[words.Length - 1] == "~$istemi.docx") continue;
+
+                if (ContainsAny(words[words.Length - 1], ListOfSuspiciousFileNames))
+                {
+                    var fileObject = new List<FileStatus>()
+                    {
+                        new FileStatus { Name = words[words.Length - 1], Status = "Suspicious file name" }
+                    };
+
+                    WriteCsv(fileObject, path, first);
+                    continue;
+                }
+                else if (ContainsAny(words[words.Length - 1], ListOfSuspiciousFileExtensions))
+                {
+                    var fileObject = new List<FileStatus>()
+                    {
+                        new FileStatus { Name = words[words.Length - 1], Status =  "Suspicious file extension"}
+                    };
+                    WriteCsv(fileObject, path, first);
+                    continue;
+                }
+                else if (ContainsAny(words[words.Length - 1], ListOfDeniedFileExtensions))
+                {
+                    var fileObject = new List<FileStatus>()
+                    {
+                        new FileStatus { Name = words[words.Length - 1], Status =  "Denied file extension"}
+                    };
+                    WriteCsv(fileObject, path, first);
+                    continue;
+                }
+
                 if (words[words.Length - 1].Contains(".pdf"))
                 {
                     string status = IsPdfPasswordProtected(file);
                     if (status == "Bad user password") status = "Password protected";
-                    tb.AddRow(words[words.Length - 1], status);
+
+                    var fileObject = new List<FileStatus>()
+                    {
+                        new FileStatus { Name = words[words.Length - 1], Status = status }
+                    };
+
+                    WriteCsv(fileObject, path, first);
                 }
                 else if (words[words.Length - 1].Contains(".one") || words[words.Length - 1].Contains(".onetoc2"))
                 {
@@ -54,17 +104,30 @@ namespace File_checker
                     string x = File.ReadAllText(result);
                     if (x.Contains("encryption"))
                     {
-                        tb.AddRow(words[words.Length - 1], "Password protected");
+                        var fileObject = new List<FileStatus>()
+                        {
+                            new FileStatus { Name = words[words.Length - 1], Status = "Password protected" }
+                        };
+
+                        WriteCsv(fileObject, path, first);
                     }
                     else
                     {
-                        tb.AddRow(words[words.Length - 1], "Not restricted");
+                        var fileObject = new List<FileStatus>()
+                        {
+                            new FileStatus { Name = words[words.Length - 1], Status = "Not restricted" }
+                        };
+
+                        WriteCsv(fileObject, path, first);
                     }
                     File.SetAttributes(result, FileAttributes.Normal);
                     File.Delete(result);
                 }
                 else
                 {
+                    var fileObject = new List<FileStatus>()
+                    {
+                    };
                     // detect access restriction
                     FileFormatInfo info = null;
                     try
@@ -74,32 +137,54 @@ namespace File_checker
                     catch (Exception)
                     {
                         // file is corrupted
-                        tb.AddRow(words[words.Length - 1], "File is corrupted");
+                        fileObject.Add(new FileStatus { Name = words[words.Length - 1], Status = "File is corrupted" });
+
+                        WriteCsv(fileObject, path, first);
                         continue;
                     }
                     accessRestricted = info.IsEncrypted;
                     passWordProtected = IsPassworded(file);
                     string status = GetStatus(accessRestricted, passWordProtected);
-                    tb.AddRow(words[words.Length - 1], status);
-                }
+                    fileObject.Add(new FileStatus { Name = words[words.Length - 1], Status = status });
 
+                    WriteCsv(fileObject, path, first);
+                }
+                first = true;
             }
-            File.WriteAllText(path + @"\test.txt", tb.Output());
+            textBox1.Clear();
+        }
+
+        public bool ContainsAny(string haystack, string[] needles)
+        {
+            foreach (string needle in needles)
+            {
+                if (haystack.Contains(needle))
+                    return true;
+            }
+            return false;
         }
 
         // returns path the user chose with dialog option
-        public static string ReturnPath()
+        public string ReturnPath()
         {
-            FolderBrowserDialog fbd = new FolderBrowserDialog();
-            string newSavePath = "";
-            if (fbd.ShowDialog() == DialogResult.OK)
+            string path = textBox1.Text;
+            if (path != "")
             {
-                newSavePath = fbd.SelectedPath;
+                return path;
             }
-            return newSavePath;
+            else
+            {
+                FolderBrowserDialog fbd = new FolderBrowserDialog();
+                string newSavePath = "";
+                if (fbd.ShowDialog() == DialogResult.OK)
+                {
+                    newSavePath = fbd.SelectedPath;
+                }
+                return newSavePath;
+            }
         }
 
-        public static string GetStatus(bool accessRestricted, bool passWordProtected)
+        public string GetStatus(bool accessRestricted, bool passWordProtected)
         {
             if (accessRestricted && passWordProtected) return "Password protected";
             if (accessRestricted && !passWordProtected) return "Access restriction";
@@ -107,7 +192,7 @@ namespace File_checker
             return "";
         }
 
-        public static string IsPdfPasswordProtected(string pdfFullname)
+        public string IsPdfPasswordProtected(string pdfFullname)
         {
             try
             {
@@ -121,7 +206,7 @@ namespace File_checker
             }
         }
 
-        public static string IsPDFHeader(string fileName)
+        public string IsPDFHeader(string fileName)
         {
             //Load the PDF file as stream.
             using (FileStream pdfStream = new FileStream(fileName, FileMode.Open, FileAccess.Read))
@@ -140,12 +225,12 @@ namespace File_checker
             }
         }
 
-        public static bool IsPassworded(string file)
+        public bool IsPassworded(string file)
         {
             var bytes = File.ReadAllBytes(file);
             return IsPassworded(bytes);
         }
-        public static bool IsPassworded(byte[] bytes)
+        public bool IsPassworded(byte[] bytes)
         {
             var prefix = Encoding.Default.GetString(bytes.Take(2).ToArray());
             if (prefix == "PK")
@@ -173,19 +258,257 @@ namespace File_checker
             return false;
         }
 
+        // file info
         private void button2_Click(object sender, EventArgs e)
         {
             string path = ReturnPath();
             string[] files = Directory.GetFiles(path, "*", SearchOption.AllDirectories);
-
+            var first = false;
             foreach (var file in files)
             {
+                string[] words = file.Split('\\');
+                if (words[words.Length - 1] == "~$istemi.docx") continue;
                 FileInfo oFileInfo = new FileInfo(file);
-                //RichTextBox textBox = new RichTextBox();
-                string atr = oFileInfo.Attributes;
-            }
+                var size = oFileInfo.Length / 1024;
+                var fileObject = new List<InfoFile>()
+                {
+                    new InfoFile { Path = file, Name = oFileInfo.Name, LastWriteTime = oFileInfo.LastWriteTime.ToString(), CreationTime = oFileInfo.CreationTime.ToString(), Size_KB = size.ToString(), Attributes = oFileInfo.Attributes.ToString() }
+                };
 
+                WriteCsv(fileObject, path, first);
+                first = true;
+            }
+            textBox1.Clear();
         }
+
+        // write file info into csv
+        public void WriteCsv(List<InfoFile> fileObject, string path, bool first)
+        {
+            path += "\\fileInfo.csv";
+
+            if (first)
+            {
+                var configFile = new CsvConfiguration(CultureInfo.InvariantCulture)
+                {
+                    HasHeaderRecord = false
+                };
+                using (var stream = File.Open(path, FileMode.Append))
+                using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
+                using (var csv = new CsvWriter(writer, configFile))
+                {
+                    csv.WriteRecords(fileObject);
+                }
+            }
+            else
+            {
+                using (var stream = File.OpenWrite(path))
+                using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
+                using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
+                {
+                    csv.WriteRecords(fileObject);
+                }
+            }
+        }
+
+        // write file status into csv
+        public void WriteCsv(List<FileStatus> fileObject, string path, bool first)
+        {
+            path += "\\fileStatus.csv";
+
+            if (first)
+            {
+                var configFile = new CsvConfiguration(CultureInfo.InvariantCulture)
+                {
+                    HasHeaderRecord = false
+                };
+                using (var stream = File.Open(path, FileMode.Append))
+                using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
+                using (var csv = new CsvWriter(writer, configFile))
+                {
+                    csv.WriteRecords(fileObject);
+                }
+            }
+            else
+            {
+                using (var stream = File.OpenWrite(path))
+                using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
+                using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
+                {
+                    csv.WriteRecords(fileObject);
+                }
+            }
+        }
+
+        // write file hash into csv
+        public void WriteCsv(List<FileHash> fileObject, string path, bool first)
+        {
+            path += "\\fileHash.csv";
+
+            if (first)
+            {
+                var configFile = new CsvConfiguration(CultureInfo.InvariantCulture)
+                {
+                    HasHeaderRecord = false
+                };
+                using (var stream = File.Open(path, FileMode.Append))
+                using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
+                using (var csv = new CsvWriter(writer, configFile))
+                {
+                    csv.WriteRecords(fileObject);
+                }
+            }
+            else
+            {
+                using (var stream = File.OpenWrite(path))
+                using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
+                using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
+                {
+                    csv.WriteRecords(fileObject);
+                }
+            }
+        }
+
+        // write file hash into csv
+        public void WriteCsv(List<FSInfo> fileObject, string path)
+        {
+            path += "\\fsInfo.csv";
+
+            using (var stream = File.OpenWrite(path))
+            using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
+            using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
+            {
+                csv.WriteRecords(fileObject);
+            }
+        }
+
+        // get folder info TODO
+        private void button3_Click(object sender, EventArgs e)
+        {
+            string path = ReturnPath();
+            int numOfDirs = Directory.GetDirectories(path, "*", SearchOption.AllDirectories).Length;
+            int numOfFiles = Directory.GetFiles(path, "*", SearchOption.AllDirectories).Length;
+
+            var size = DirSize(new DirectoryInfo(path));
+            size /= 1024 * 1024;
+
+            string[] files = Directory.GetFiles(path, "*", SearchOption.AllDirectories);
+            DateTime dateTime = new DateTime();
+            string newest = "";
+            foreach (var file in files)
+            {
+                string[] words = file.Split('\\');
+                FileInfo oFileInfo = new FileInfo(file);
+
+                var newDate = oFileInfo.LastWriteTime;
+                if (newDate > dateTime)
+                {
+                    dateTime = newDate;
+                    newest = oFileInfo.Name;
+                }
+            }
+            var fileObject = new List<FSInfo>()
+            {
+                    new FSInfo { Name = path, Size_MB = size.ToString(), Number_Of_Folders = numOfDirs, Number_Of_Files = numOfFiles, Last_Changed_File = newest }
+            };
+
+            WriteCsv(fileObject, path);
+            textBox1.Clear();
+            //foreach (var dir in dirs)
+            //{
+            //    DirectoryInfo dirInfo = new DirectoryInfo(dir);
+            //    var size = new DirectoryInfo(path).GetDirectorySize();
+            //    //richTextBox1.AppendText(dirInfo.Attributes + "\n");
+            //}
+        }
+
+        public long DirSize(DirectoryInfo d)
+        {
+            long size = 0;
+            // Add file sizes.
+            FileInfo[] fis = d.GetFiles();
+            foreach (FileInfo fi in fis)
+            {
+                size += fi.Length;
+            }
+            // Add subdirectory sizes.
+            DirectoryInfo[] dis = d.GetDirectories();
+            foreach (DirectoryInfo di in dis)
+            {
+                size += DirSize(di);
+            }
+            return size;
+        }
+
+        private void button4_Click(object sender, EventArgs e)
+        {
+            string path = ReturnPath();
+            string[] files = Directory.GetFiles(path, "*", SearchOption.AllDirectories);
+            var first = false;
+            foreach (var file in files)
+            {
+                string[] words = file.Split('\\');
+                if (words[words.Length - 1] == "~$istemi.docx") continue;
+                var hash = GetMD5Checksum(file);
+                var fileObject = new List<FileHash>()
+                {
+                    new FileHash { Name = words[words.Length - 1], Hash = hash }
+                };
+
+                WriteCsv(fileObject, path, first);
+                first = true;
+            }
+            textBox1.Clear();
+        }
+
+        public static string GetMD5Checksum(string filename)
+        {
+            using (var md5 = System.Security.Cryptography.MD5.Create())
+            {
+                using (var stream = System.IO.File.OpenRead(filename))
+                {
+                    var hash = md5.ComputeHash(stream);
+                    return BitConverter.ToString(hash).Replace("-", "");
+                }
+            }
+        }
+    }
+
+    public class FSInfo
+    {
+        public string Name { get; set; }
+
+        public string Size_MB { get; set; }
+
+        public int Number_Of_Folders { get; set; }
+
+        public int Number_Of_Files { get; set; }
+
+        public string Last_Changed_File { get; set; }
+    }
+
+    public class FileHash
+    {
+        public string Name { get; set; }
+
+        public string Hash { get; set; }
+    }
+
+    public class FileStatus
+    {
+        public string Name { get; set; }
+
+        public string Status { get; set; }
+    }
+
+    public class InfoFile
+    {
+        public string Path { get; set; }
+        public string Name { get; set; }
+        public string LastWriteTime { get; set; }
+        public string CreationTime { get; set; }
+        public string Size_KB { get; set; }
+        public string Attributes { get; set; }
+
     }
 
     //https://stackoverflow.com/a/14698822
