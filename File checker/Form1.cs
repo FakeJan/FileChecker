@@ -4,19 +4,16 @@ using CsvHelper.Configuration;
 using iTextSharp.text.exceptions;
 using iTextSharp.text.pdf;
 using iTextSharp.text.pdf.parser;
+using Org.BouncyCastle.Utilities;
 using Syncfusion.Pdf.Parsing;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
-using static File_checker.FileHash;
-using static System.Net.WebRequestMethods;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement;
+using static File_checker.Form1;
 using File = System.IO.File;
 using Path = System.IO.Path;
 
@@ -41,7 +38,7 @@ namespace File_checker
             string path = ReturnPath();
             string[] files = Directory.GetFiles(path, "*", SearchOption.AllDirectories);
             // if first true -> access restriction, if both true -> password protected
-            var first = false;
+            var fileObject = new List<FileStatus>();
             foreach (var file in files)
             {
                 string[] words = file.Split('\\');
@@ -54,30 +51,17 @@ namespace File_checker
 
                 if (ContainsAny(words[words.Length - 1], ListOfSuspiciousFileNames))
                 {
-                    var fileObject = new List<FileStatus>()
-                    {
-                        new FileStatus { Name = words[words.Length - 1], Status = "Suspicious file name" }
-                    };
-
-                    WriteCsv(fileObject, path, first);
+                    fileObject.Add(new FileStatus { Name = words[words.Length - 1], Status = "Suspicious file name" });
                     continue;
                 }
                 else if (ContainsAny(words[words.Length - 1], ListOfSuspiciousFileExtensions))
                 {
-                    var fileObject = new List<FileStatus>()
-                    {
-                        new FileStatus { Name = words[words.Length - 1], Status =  "Suspicious file extension"}
-                    };
-                    WriteCsv(fileObject, path, first);
+                    fileObject.Add(new FileStatus { Name = words[words.Length - 1], Status = "Suspicious file extension" });
                     continue;
                 }
                 else if (ContainsAny(words[words.Length - 1], ListOfDeniedFileExtensions))
                 {
-                    var fileObject = new List<FileStatus>()
-                    {
-                        new FileStatus { Name = words[words.Length - 1], Status =  "Denied file extension"}
-                    };
-                    WriteCsv(fileObject, path, first);
+                    fileObject.Add(new FileStatus { Name = words[words.Length - 1], Status = "Denied file extension" });
                     continue;
                 }
 
@@ -86,12 +70,7 @@ namespace File_checker
                     string status = IsPdfPasswordProtected(file);
                     if (status == "Bad user password") status = "Password protected";
 
-                    var fileObject = new List<FileStatus>()
-                    {
-                        new FileStatus { Name = words[words.Length - 1], Status = status }
-                    };
-
-                    WriteCsv(fileObject, path, first);
+                    fileObject.Add(new FileStatus { Name = words[words.Length - 1], Status = status });
                 }
                 else if (words[words.Length - 1].Contains(".one") || words[words.Length - 1].Contains(".onetoc2"))
                 {
@@ -104,30 +83,17 @@ namespace File_checker
                     string x = File.ReadAllText(result);
                     if (x.Contains("encryption"))
                     {
-                        var fileObject = new List<FileStatus>()
-                        {
-                            new FileStatus { Name = words[words.Length - 1], Status = "Password protected" }
-                        };
-
-                        WriteCsv(fileObject, path, first);
+                        fileObject.Add(new FileStatus { Name = words[words.Length - 1], Status = "Password protected" });
                     }
                     else
                     {
-                        var fileObject = new List<FileStatus>()
-                        {
-                            new FileStatus { Name = words[words.Length - 1], Status = "Not restricted" }
-                        };
-
-                        WriteCsv(fileObject, path, first);
+                        fileObject.Add(new FileStatus { Name = words[words.Length - 1], Status = "Not restricted" });
                     }
                     File.SetAttributes(result, FileAttributes.Normal);
                     File.Delete(result);
                 }
                 else
                 {
-                    var fileObject = new List<FileStatus>()
-                    {
-                    };
                     // detect access restriction
                     FileFormatInfo info = null;
                     try
@@ -138,19 +104,15 @@ namespace File_checker
                     {
                         // file is corrupted
                         fileObject.Add(new FileStatus { Name = words[words.Length - 1], Status = "File is corrupted" });
-
-                        WriteCsv(fileObject, path, first);
                         continue;
                     }
                     accessRestricted = info.IsEncrypted;
                     passWordProtected = IsPassworded(file);
                     string status = GetStatus(accessRestricted, passWordProtected);
                     fileObject.Add(new FileStatus { Name = words[words.Length - 1], Status = status });
-
-                    WriteCsv(fileObject, path, first);
                 }
-                first = true;
             }
+            WriteCsv(fileObject, path);
             textBox1.Clear();
         }
 
@@ -263,108 +225,55 @@ namespace File_checker
         {
             string path = ReturnPath();
             string[] files = Directory.GetFiles(path, "*", SearchOption.AllDirectories);
-            var first = false;
+            var fileObject = new List<InfoFile>();
             foreach (var file in files)
             {
                 string[] words = file.Split('\\');
                 if (words[words.Length - 1] == "~$istemi.docx") continue;
                 FileInfo oFileInfo = new FileInfo(file);
                 var size = oFileInfo.Length / 1024;
-                var fileObject = new List<InfoFile>()
-                {
-                    new InfoFile { Path = file, Name = oFileInfo.Name, LastWriteTime = oFileInfo.LastWriteTime.ToString(), CreationTime = oFileInfo.CreationTime.ToString(), Size_KB = size.ToString(), Attributes = oFileInfo.Attributes.ToString() }
-                };
-
-                WriteCsv(fileObject, path, first);
-                first = true;
+                fileObject.Add(new InfoFile { Path = file, Name = oFileInfo.Name, LastWriteTime = oFileInfo.LastWriteTime.ToString(), CreationTime = oFileInfo.CreationTime.ToString(), Size_KB = size.ToString(), Attributes = oFileInfo.Attributes.ToString() });
             }
+            WriteCsv(fileObject, path);
             textBox1.Clear();
         }
 
         // write file info into csv
-        public void WriteCsv(List<InfoFile> fileObject, string path, bool first)
+        public void WriteCsv(List<InfoFile> fileObject, string path)
         {
             path += "\\fileInfo.csv";
 
-            if (first)
+            using (var stream = File.OpenWrite(path))
+            using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
+            using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
             {
-                var configFile = new CsvConfiguration(CultureInfo.InvariantCulture)
-                {
-                    HasHeaderRecord = false
-                };
-                using (var stream = File.Open(path, FileMode.Append))
-                using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
-                using (var csv = new CsvWriter(writer, configFile))
-                {
-                    csv.WriteRecords(fileObject);
-                }
-            }
-            else
-            {
-                using (var stream = File.OpenWrite(path))
-                using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
-                using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
-                {
-                    csv.WriteRecords(fileObject);
-                }
+                csv.WriteRecords(fileObject);
             }
         }
 
         // write file status into csv
-        public void WriteCsv(List<FileStatus> fileObject, string path, bool first)
+        public void WriteCsv(List<FileStatus> fileObject, string path)
         {
             path += "\\fileStatus.csv";
 
-            if (first)
+            using (var stream = File.OpenWrite(path))
+            using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
+            using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
             {
-                var configFile = new CsvConfiguration(CultureInfo.InvariantCulture)
-                {
-                    HasHeaderRecord = false
-                };
-                using (var stream = File.Open(path, FileMode.Append))
-                using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
-                using (var csv = new CsvWriter(writer, configFile))
-                {
-                    csv.WriteRecords(fileObject);
-                }
-            }
-            else
-            {
-                using (var stream = File.OpenWrite(path))
-                using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
-                using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
-                {
-                    csv.WriteRecords(fileObject);
-                }
+                csv.WriteRecords(fileObject);
             }
         }
 
         // write file hash into csv
-        public void WriteCsv(List<FileHash> fileObject, string path, bool first)
+        public void WriteCsv(List<FileHash> fileObject, string path)
         {
             path += "\\fileHash.csv";
 
-            if (first)
+            using (var stream = File.OpenWrite(path))
+            using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
+            using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
             {
-                var configFile = new CsvConfiguration(CultureInfo.InvariantCulture)
-                {
-                    HasHeaderRecord = false
-                };
-                using (var stream = File.Open(path, FileMode.Append))
-                using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
-                using (var csv = new CsvWriter(writer, configFile))
-                {
-                    csv.WriteRecords(fileObject);
-                }
-            }
-            else
-            {
-                using (var stream = File.OpenWrite(path))
-                using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
-                using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
-                {
-                    csv.WriteRecords(fileObject);
-                }
+                csv.WriteRecords(fileObject);
             }
         }
 
@@ -381,7 +290,7 @@ namespace File_checker
             }
         }
 
-        // get folder info TODO
+        // get fs info
         private void button3_Click(object sender, EventArgs e)
         {
             string path = ReturnPath();
@@ -408,7 +317,7 @@ namespace File_checker
             }
             var fileObject = new List<FSInfo>()
             {
-                    new FSInfo { Name = path, Size_MB = size.ToString(), Number_Of_Folders = numOfDirs, Number_Of_Files = numOfFiles, Last_Changed_File = newest }
+                new FSInfo { Name = path, Size_MB = size.ToString(), Number_Of_Folders = numOfDirs, Number_Of_Files = numOfFiles, Last_Changed_File = newest }
             };
 
             WriteCsv(fileObject, path);
@@ -442,25 +351,25 @@ namespace File_checker
         private void button4_Click(object sender, EventArgs e)
         {
             string path = ReturnPath();
+            string[] temp = path.Split('\\');
+            string subpath = temp[temp.Length - 1];
             string[] files = Directory.GetFiles(path, "*", SearchOption.AllDirectories);
-            var first = false;
+            var fileObject = new List<FileHash>();
             foreach (var file in files)
             {
                 string[] words = file.Split('\\');
                 if (words[words.Length - 1] == "~$istemi.docx") continue;
+                int index = file.IndexOf(subpath);
+                string name = file.Substring(index);
                 var hash = GetMD5Checksum(file);
-                var fileObject = new List<FileHash>()
-                {
-                    new FileHash { Name = words[words.Length - 1], Hash = hash }
-                };
 
-                WriteCsv(fileObject, path, first);
-                first = true;
+                fileObject.Add(new FileHash { Name = name, Hash = hash });
             }
+            WriteCsv(fileObject, path);
             textBox1.Clear();
         }
 
-        public static string GetMD5Checksum(string filename)
+        public string GetMD5Checksum(string filename)
         {
             using (var md5 = System.Security.Cryptography.MD5.Create())
             {
@@ -471,157 +380,250 @@ namespace File_checker
                 }
             }
         }
-    }
 
-    public class FSInfo
-    {
-        public string Name { get; set; }
-
-        public string Size_MB { get; set; }
-
-        public int Number_Of_Folders { get; set; }
-
-        public int Number_Of_Files { get; set; }
-
-        public string Last_Changed_File { get; set; }
-    }
-
-    public class FileHash
-    {
-        public string Name { get; set; }
-
-        public string Hash { get; set; }
-    }
-
-    public class FileStatus
-    {
-        public string Name { get; set; }
-
-        public string Status { get; set; }
-    }
-
-    public class InfoFile
-    {
-        public string Path { get; set; }
-        public string Name { get; set; }
-        public string LastWriteTime { get; set; }
-        public string CreationTime { get; set; }
-        public string Size_KB { get; set; }
-        public string Attributes { get; set; }
-
-    }
-
-    //https://stackoverflow.com/a/14698822
-    public interface ITextRow
-    {
-        String Output();
-        void Output(StringBuilder sb);
-        Object Tag { get; set; }
-    }
-
-    public class TableBuilder : IEnumerable<ITextRow>
-    {
-        protected class TextRow : List<String>, ITextRow
+        private void button5_Click(object sender, EventArgs e)
         {
-            protected TableBuilder owner = null;
-            public TextRow(TableBuilder Owner)
+            string firstFile = ReturnFilePath();
+            string secondFile = ReturnFilePath();
+
+            List<string> csvANames = new List<string>();
+            List<string> csvAHash = new List<string>();
+            List<string> csvBNames = new List<string>();
+            List<string> csvBHash = new List<string>();
+
+            using (var reader = new StreamReader(firstFile))
             {
-                owner = Owner;
-                if (owner == null) throw new ArgumentException("Owner");
-            }
-            public String Output()
-            {
-                StringBuilder sb = new StringBuilder();
-                Output(sb);
-                return sb.ToString();
-            }
-            public void Output(StringBuilder sb)
-            {
-                sb.AppendFormat(owner.FormatString, this.ToArray());
-            }
-            public Object Tag { get; set; }
-        }
-
-        public String Separator { get; set; }
-
-        protected List<ITextRow> rows = new List<ITextRow>();
-        protected List<int> colLength = new List<int>();
-
-        public TableBuilder()
-        {
-            Separator = "  ";
-        }
-
-        public TableBuilder(String separator)
-            : this()
-        {
-            Separator = separator;
-        }
-
-        public ITextRow AddRow(params object[] cols)
-        {
-            TextRow row = new TextRow(this);
-            foreach (object o in cols)
-            {
-                String str = o.ToString().Trim();
-                row.Add(str);
-                if (colLength.Count >= row.Count)
+                while (!reader.EndOfStream)
                 {
-                    int curLength = colLength[row.Count - 1];
-                    if (str.Length > curLength) colLength[row.Count - 1] = str.Length;
+                    var line = reader.ReadLine();
+                    var values = line.Split(',');
+
+                    csvANames.Add(values[0]);
+                    csvAHash.Add(values[1]);
+                }
+            }
+            using (var reader = new StreamReader(secondFile))
+            {
+
+                while (!reader.EndOfStream)
+                {
+                    var line = reader.ReadLine();
+                    var values = line.Split(',');
+
+                    csvBNames.Add(values[0]);
+                    csvBHash.Add(values[1]);
+                }
+            }
+
+            if (csvAHash.Count != csvBHash.Count) return;
+            List<bool> result = new List<bool>();
+            for (int i = 0; i < csvAHash.Count; i++)
+            {
+                if (csvAHash[i] == csvBHash[i])
+                {
+                    result.Add(true);
                 }
                 else
                 {
-                    colLength.Add(str.Length);
+                    result.Add(false);
                 }
             }
-            rows.Add(row);
-            return row;
+            string[] dirs = firstFile.Split('\\');
+            List<string> list = new List<string>(dirs);
+            list.RemoveAt(dirs.Length - 1);
+            dirs = list.ToArray();
+            string path = String.Join("\\", dirs);
+
+            var fileObject = new List<FileHashExtended>();
+            for (int i = 1; i < result.Count; i++)
+            {
+                fileObject.Add(new FileHashExtended { Name = csvANames[i], Hash = csvAHash[i], Matching = result[i] });
+            }
+            WriteCsv(fileObject, path);
         }
 
-        protected String _fmtString = null;
-        public String FormatString
+        // write file hash into csv
+        public void WriteCsv(List<FileHashExtended> fileObject, string path)
         {
-            get
+            path += "\\hashCompareResult.csv";
+
+            using (var stream = File.OpenWrite(path))
+            using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
+            using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
             {
-                if (_fmtString == null)
+                csv.WriteRecords(fileObject);
+            }
+        }
+
+        private string ReturnFilePath()
+        {
+            OpenFileDialog open = new OpenFileDialog();
+            //open.Filter = "All Files *.txt | *.txt";
+            open.Multiselect = true;
+            open.Title = "Select files";
+            string filePath = "";
+            if (open.ShowDialog() == DialogResult.OK)
+            {
+                filePath = open.FileName;
+            }
+            return filePath;
+        }
+
+        public class FileHashExtended : FileHash
+        {
+            public bool Matching { get; set; }
+        }
+
+        public class FSInfo
+        {
+            public string Name { get; set; }
+
+            public string Size_MB { get; set; }
+
+            public int Number_Of_Folders { get; set; }
+
+            public int Number_Of_Files { get; set; }
+
+            public string Last_Changed_File { get; set; }
+        }
+
+        public class FileHash
+        {
+            public string Name { get; set; }
+
+            public string Hash { get; set; }
+        }
+
+        public class FileStatus
+        {
+            public string Name { get; set; }
+
+            public string Status { get; set; }
+        }
+
+        public class InfoFile
+        {
+            public string Path { get; set; }
+            public string Name { get; set; }
+            public string LastWriteTime { get; set; }
+            public string CreationTime { get; set; }
+            public string Size_KB { get; set; }
+            public string Attributes { get; set; }
+
+        }
+
+        //https://stackoverflow.com/a/14698822
+        public interface ITextRow
+        {
+            String Output();
+            void Output(StringBuilder sb);
+            Object Tag { get; set; }
+        }
+
+        public class TableBuilder : IEnumerable<ITextRow>
+        {
+            protected class TextRow : List<String>, ITextRow
+            {
+                protected TableBuilder owner = null;
+                public TextRow(TableBuilder Owner)
                 {
-                    String format = "";
-                    int i = 0;
-                    foreach (int len in colLength)
-                    {
-                        format += String.Format("{{{0},-{1}}}{2}", i++, len, Separator);
-                    }
-                    format += "\r\n";
-                    _fmtString = format;
+                    owner = Owner;
+                    if (owner == null) throw new ArgumentException("Owner");
                 }
-                return _fmtString;
+                public String Output()
+                {
+                    StringBuilder sb = new StringBuilder();
+                    Output(sb);
+                    return sb.ToString();
+                }
+                public void Output(StringBuilder sb)
+                {
+                    sb.AppendFormat(owner.FormatString, this.ToArray());
+                }
+                public Object Tag { get; set; }
             }
-        }
 
-        public String Output()
-        {
-            StringBuilder sb = new StringBuilder();
-            foreach (TextRow row in rows)
+            public String Separator { get; set; }
+
+            protected List<ITextRow> rows = new List<ITextRow>();
+            protected List<int> colLength = new List<int>();
+
+            public TableBuilder()
             {
-                row.Output(sb);
+                Separator = "  ";
             }
-            return sb.ToString();
+
+            public TableBuilder(String separator)
+                : this()
+            {
+                Separator = separator;
+            }
+
+            public ITextRow AddRow(params object[] cols)
+            {
+                TextRow row = new TextRow(this);
+                foreach (object o in cols)
+                {
+                    String str = o.ToString().Trim();
+                    row.Add(str);
+                    if (colLength.Count >= row.Count)
+                    {
+                        int curLength = colLength[row.Count - 1];
+                        if (str.Length > curLength) colLength[row.Count - 1] = str.Length;
+                    }
+                    else
+                    {
+                        colLength.Add(str.Length);
+                    }
+                }
+                rows.Add(row);
+                return row;
+            }
+
+            protected String _fmtString = null;
+            public String FormatString
+            {
+                get
+                {
+                    if (_fmtString == null)
+                    {
+                        String format = "";
+                        int i = 0;
+                        foreach (int len in colLength)
+                        {
+                            format += String.Format("{{{0},-{1}}}{2}", i++, len, Separator);
+                        }
+                        format += "\r\n";
+                        _fmtString = format;
+                    }
+                    return _fmtString;
+                }
+            }
+
+            public String Output()
+            {
+                StringBuilder sb = new StringBuilder();
+                foreach (TextRow row in rows)
+                {
+                    row.Output(sb);
+                }
+                return sb.ToString();
+            }
+
+            #region IEnumerable Members
+
+            public IEnumerator<ITextRow> GetEnumerator()
+            {
+                return rows.GetEnumerator();
+            }
+
+            System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+            {
+                return rows.GetEnumerator();
+            }
+
+            #endregion
         }
 
-        #region IEnumerable Members
-
-        public IEnumerator<ITextRow> GetEnumerator()
-        {
-            return rows.GetEnumerator();
-        }
-
-        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
-        {
-            return rows.GetEnumerator();
-        }
-
-        #endregion
     }
-
 }
