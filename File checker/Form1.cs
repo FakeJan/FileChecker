@@ -1,4 +1,5 @@
 ﻿using Aspose.Words;
+using Azure;
 using CsvHelper;
 using CsvHelper.Configuration;
 using iTextSharp.text.exceptions;
@@ -8,9 +9,12 @@ using Org.BouncyCastle.Utilities;
 using Syncfusion.Pdf.Parsing;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Management.Automation;
+using System.Reflection;
 using System.Text;
 using System.Windows.Forms;
 using static File_checker.Form1;
@@ -224,6 +228,8 @@ namespace File_checker
         private void button2_Click(object sender, EventArgs e)
         {
             string path = ReturnPath();
+            string[] temp = path.Split('\\');
+            string subpath = temp[temp.Length - 1];
             string[] files = Directory.GetFiles(path, "*", SearchOption.AllDirectories);
             var fileObject = new List<InfoFile>();
             foreach (var file in files)
@@ -232,7 +238,10 @@ namespace File_checker
                 if (words[words.Length - 1] == "~$istemi.docx") continue;
                 FileInfo oFileInfo = new FileInfo(file);
                 var size = oFileInfo.Length / 1024;
-                fileObject.Add(new InfoFile { Path = file, Name = oFileInfo.Name, LastWriteTime = oFileInfo.LastWriteTime.ToString(), CreationTime = oFileInfo.CreationTime.ToString(), Size_KB = size.ToString(), Attributes = oFileInfo.Attributes.ToString() });
+                int index = file.IndexOf(subpath);
+                string name = file.Substring(index);
+                string attributes = oFileInfo.Attributes.ToString().Replace(",", ";");
+                fileObject.Add(new InfoFile { Path = name, Name = oFileInfo.Name, LastWriteTime = oFileInfo.LastWriteTime.ToString(), CreationTime = oFileInfo.CreationTime.ToString(), Size_KB = size.ToString(), Attributes = attributes });
             }
             WriteCsv(fileObject, path);
             textBox1.Clear();
@@ -322,12 +331,7 @@ namespace File_checker
 
             WriteCsv(fileObject, path);
             textBox1.Clear();
-            //foreach (var dir in dirs)
-            //{
-            //    DirectoryInfo dirInfo = new DirectoryInfo(dir);
-            //    var size = new DirectoryInfo(path).GetDirectorySize();
-            //    //richTextBox1.AppendText(dirInfo.Attributes + "\n");
-            //}
+
         }
 
         public long DirSize(DirectoryInfo d)
@@ -381,6 +385,7 @@ namespace File_checker
             }
         }
 
+        // compare file hash
         private void button5_Click(object sender, EventArgs e)
         {
             string firstFile = ReturnFilePath();
@@ -415,31 +420,86 @@ namespace File_checker
                 }
             }
 
-            if (csvAHash.Count != csvBHash.Count) return;
-            List<bool> result = new List<bool>();
-            for (int i = 0; i < csvAHash.Count; i++)
+            var fileObject = new List<FileHashExtended>();
+
+            //check if A is in B
+            for (int i = 1; i < csvANames.Count; i++)
             {
-                if (csvAHash[i] == csvBHash[i])
+                string[] temp = csvANames[i].Split('\\');
+                string fileName = temp[temp.Length - 1];
+                for (int j = 1; j < csvBNames.Count; j++)
                 {
-                    result.Add(true);
-                }
-                else
-                {
-                    result.Add(false);
+                    if (csvBNames.Contains(csvANames[i]))
+                    {
+                        //check if hash is the same
+                        if (csvAHash[i] == csvBHash[csvBNames.IndexOf(csvANames[i])])
+                        {
+                            // true
+                            fileObject.Add(new FileHashExtended { Name = csvANames[i], Hash = csvAHash[i], Matching = "Hash matches", FileName = fileName });
+                        }
+                        else
+                        {
+                            // false
+                            fileObject.Add(new FileHashExtended { Name = csvANames[i], Hash = csvAHash[i], Matching = "Hash doesn't match", FileName = fileName });
+                        }
+                        break;
+                    }
+                    else if (!csvBNames.Contains(csvANames[i]))
+                    {
+                        // doesn't contain
+                        fileObject.Add(new FileHashExtended { Name = csvANames[i], Hash = csvAHash[i], Matching = "File not in second FS", FileName = fileName });
+                        break;
+                    }
+                    else
+                    {
+                        continue;
+                    }
                 }
             }
+
+            //check if B is in A
+            for (int i = 1; i < csvBNames.Count; i++)
+            {
+                string[] temp = csvBNames[i].Split('\\');
+                string fileName = temp[temp.Length - 1];
+                for (int j = 1; j < csvANames.Count; j++)
+                {
+                    if (csvANames.Contains(csvBNames[i]))
+                    {
+                        //check if hash is the same
+                        if (csvBHash[i] == csvAHash[csvANames.IndexOf(csvBNames[i])])
+                        {
+                            // true
+                            fileObject.Add(new FileHashExtended { Name = csvBNames[i], Hash = csvBHash[i], Matching = "Hash matches", FileName = fileName });
+                        }
+                        else
+                        {
+                            // false
+                            fileObject.Add(new FileHashExtended { Name = csvBNames[i], Hash = csvBHash[i], Matching = "Hash doesn't match", FileName = fileName });
+                        }
+                        break;
+                    }
+                    else if (!csvANames.Contains(csvBNames[i]))
+                    {
+                        // doesn't contain
+                        fileObject.Add(new FileHashExtended { Name = csvBNames[i], Hash = csvBHash[i], Matching = "File not in first FS", FileName = fileName });
+                        break;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                }
+            }
+            var noDupes = fileObject.GroupBy(x => x.Name).Select(x => x.First()).ToList();
+
             string[] dirs = firstFile.Split('\\');
             List<string> list = new List<string>(dirs);
             list.RemoveAt(dirs.Length - 1);
             dirs = list.ToArray();
             string path = String.Join("\\", dirs);
 
-            var fileObject = new List<FileHashExtended>();
-            for (int i = 1; i < result.Count; i++)
-            {
-                fileObject.Add(new FileHashExtended { Name = csvANames[i], Hash = csvAHash[i], Matching = result[i] });
-            }
-            WriteCsv(fileObject, path);
+            WriteCsv(noDupes, path);
         }
 
         // write file hash into csv
@@ -469,9 +529,433 @@ namespace File_checker
             return filePath;
         }
 
+        public void WriteCsv(List<InfoFileExtended> fileObject, string path)
+        {
+            path += "\\fileInfoCompareResult.csv";
+
+            using (var stream = File.OpenWrite(path))
+            using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
+            using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
+            {
+                csv.WriteRecords(fileObject);
+            }
+        }
+
+        // compare files
+        private void button6_Click(object sender, EventArgs e)
+        {
+            string firstFile = ReturnFilePath();
+            string secondFile = ReturnFilePath();
+
+            List<string> csvAPath = new List<string>();
+            List<string> csvANames = new List<string>();
+            List<string> csvALastWrite = new List<string>();
+            List<string> csvACreateTime = new List<string>();
+            List<string> csvASize = new List<string>();
+            List<string> csvAAttributes = new List<string>();
+
+            List<string> csvBPath = new List<string>();
+            List<string> csvBNames = new List<string>();
+            List<string> csvBLastWrite = new List<string>();
+            List<string> csvBCreateTime = new List<string>();
+            List<string> csvBSize = new List<string>();
+            List<string> csvBAttributes = new List<string>();
+
+            using (var reader = new StreamReader(firstFile))
+            {
+                while (!reader.EndOfStream)
+                {
+                    var line = reader.ReadLine();
+                    var values = line.Split(',');
+
+                    csvAPath.Add(values[0]);
+                    csvANames.Add(values[1]);
+                    csvALastWrite.Add(values[2]);
+                    csvACreateTime.Add(values[3]);
+                    csvASize.Add(values[4]);
+                    csvAAttributes.Add(values[5]);
+                }
+            }
+            using (var reader = new StreamReader(secondFile))
+            {
+
+                while (!reader.EndOfStream)
+                {
+                    var line = reader.ReadLine();
+                    var values = line.Split(',');
+
+                    csvBPath.Add(values[0]);
+                    csvBNames.Add(values[1]);
+                    csvBLastWrite.Add(values[2]);
+                    csvBCreateTime.Add(values[3]);
+                    csvBSize.Add(values[4]);
+                    csvBAttributes.Add(values[5]);
+                }
+            }
+
+            var fileObject = new List<InfoFileExtended>();
+
+            //check if A is in B
+            for (int i = 1; i < csvANames.Count; i++)
+            {
+                string[] temp = csvANames[i].Split('\\');
+                string fileName = temp[temp.Length - 1];
+                for (int j = 1; j < csvBNames.Count; j++)
+                {
+                    if (csvBNames.Contains(csvANames[i]))
+                    {
+                        //check if all columns are the same
+                        if (csvALastWrite[i] == csvBLastWrite[csvBNames.IndexOf(csvANames[i])] &&
+                            csvACreateTime[i] == csvBCreateTime[csvBNames.IndexOf(csvANames[i])] &&
+                            csvASize[i] == csvBSize[csvBNames.IndexOf(csvANames[i])] &&
+                            csvAAttributes[i] == csvBAttributes[csvBNames.IndexOf(csvANames[i])])
+                        {
+                            fileObject.Add(new InfoFileExtended { Path = csvAPath[i], Name = csvANames[i], LastWriteTime = csvALastWrite[i], CreationTime = csvACreateTime[i], Size_KB = csvASize[i], Attributes = csvAAttributes[i], Matching = "Files are the same" });
+                        }
+                        else
+                        {
+                            fileObject.Add(new InfoFileExtended { Path = csvAPath[i], Name = csvANames[i], LastWriteTime = csvALastWrite[i], CreationTime = csvACreateTime[i], Size_KB = csvASize[i], Attributes = csvAAttributes[i], Matching = "Files aren't the same" });
+                        }
+                        break;
+                    }
+                    else if (!csvBNames.Contains(csvANames[i]))
+                    {
+                        // doesn't contain
+                        fileObject.Add(new InfoFileExtended { Path = csvAPath[i], Name = csvANames[i], LastWriteTime = csvALastWrite[i], CreationTime = csvACreateTime[i], Size_KB = csvASize[i], Attributes = csvAAttributes[i], Matching = "File not in second FS" });
+                        break;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                }
+            }
+
+            //check if B is in A
+            for (int i = 1; i < csvBNames.Count; i++)
+            {
+                string[] temp = csvBNames[i].Split('\\');
+                string fileName = temp[temp.Length - 1];
+                for (int j = 1; j < csvANames.Count; j++)
+                {
+                    if (csvANames.Contains(csvBNames[i]))
+                    {
+                        //check if all columns are the same
+                        if (csvBLastWrite[i] == csvALastWrite[csvANames.IndexOf(csvBNames[i])] &&
+                            csvBCreateTime[i] == csvACreateTime[csvANames.IndexOf(csvBNames[i])] &&
+                            csvBSize[i] == csvASize[csvANames.IndexOf(csvBNames[i])] &&
+                            csvBAttributes[i] == csvAAttributes[csvANames.IndexOf(csvBNames[i])])
+                        {
+                            fileObject.Add(new InfoFileExtended { Path = csvBPath[i], Name = csvBNames[i], LastWriteTime = csvBLastWrite[i], CreationTime = csvBCreateTime[i], Size_KB = csvBSize[i], Attributes = csvBAttributes[i], Matching = "Files are the same" });
+                        }
+                        else
+                        {
+                            fileObject.Add(new InfoFileExtended { Path = csvBPath[i], Name = csvBNames[i], LastWriteTime = csvBLastWrite[i], CreationTime = csvBCreateTime[i], Size_KB = csvBSize[i], Attributes = csvBAttributes[i], Matching = "Files aren't the same" });
+                        }
+                        break;
+                    }
+                    else if (!csvANames.Contains(csvBNames[i]))
+                    {
+                        // doesn't contain
+                        fileObject.Add(new InfoFileExtended { Path = csvBPath[i], Name = csvBNames[i], LastWriteTime = csvBLastWrite[i], CreationTime = csvBCreateTime[i], Size_KB = csvBSize[i], Attributes = csvBAttributes[i], Matching = "File not in first FS" });
+                        break;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                }
+            }
+            var noDupes = fileObject.GroupBy(x => x.Name).Select(x => x.First()).ToList();
+
+            string[] dirs = firstFile.Split('\\');
+            List<string> list = new List<string>(dirs);
+            list.RemoveAt(dirs.Length - 1);
+            dirs = list.ToArray();
+            string path = String.Join("\\", dirs);
+
+            WriteCsv(noDupes, path);
+        }
+
+        // get folder membership
+        private void button7_Click(object sender, EventArgs e)
+        {
+            string path = ReturnPath();
+            string[] temp = path.Split('\\');
+            string subpath = temp[temp.Length - 1];
+            string[] dirs = Directory.GetDirectories(path, "*", SearchOption.AllDirectories);
+            var fileObject = new List<Membership>();
+            foreach (var dir in dirs)
+            {
+                PowerShell ps = PowerShell.Create();
+
+                ps.AddCommand("icacls");
+                ps.AddArgument(dir);
+                //ps.AddArgument("/T");
+                Collection<PSObject> output = ps.Invoke();
+                output.RemoveAt(output.Count - 1);
+                output.RemoveAt(output.Count - 1);
+                List<string> result = new List<string>();
+                int index = dir.IndexOf(subpath);
+                string name = dir.Substring(index);
+                foreach (var item in output)
+                {
+                    string user;
+                    List<string> properties;
+
+                    if (item == output[0])
+                    {
+                        string[] tmp = item.ToString().Split(' ');
+                        //name = tmp[0];
+                        string[] tmp2 = tmp[2].ToString().Split('\\');
+                        string[] user_settings = tmp2[1].Split(':');
+                        user = user_settings[0];
+                        properties = MapSettings(user_settings[1]);
+                        fileObject.Add(new Membership { Name = name, User = user, Properties = String.Join(";", properties) });
+                    }
+                    else
+                    {
+                        string trimmed = String.Concat(item.ToString().Where(c => !Char.IsWhiteSpace(c)));
+                        string[] tmp = trimmed.ToString().Split(':');
+                        user = tmp[0];
+                        properties = MapSettings(tmp[1]);
+
+                        fileObject.Add(new Membership { Name = name, User = user, Properties = String.Join(";", properties) });
+                    }
+                }
+
+            }
+            WriteCsv(fileObject, path);
+
+        }
+
+        public void WriteCsv(List<Membership> fileObject, string path)
+        {
+            path += "\\membership.csv";
+
+            using (var stream = File.OpenWrite(path))
+            using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
+            using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
+            {
+                csv.WriteRecords(fileObject);
+            }
+        }
+
+        private List<string> MapSettings(string sh)
+        {
+            List<string> mappedValues = new List<string>();
+
+            string[] values = sh.Split(')');
+            values = values.Select(x => x.Replace("(", "")).ToArray();
+            foreach (var value in values)
+            {
+                string permission = "";
+                switch (value)
+                {
+                    // iCACLS inheritance settings:
+                    case "OI":
+                        permission = "object inherit";
+                        break;
+                    case "CI":
+                        permission = "container inherit";
+                        break;
+                    case "IO":
+                        permission = "inherit only";
+                        break;
+                    case "NP":
+                        permission = "don't propagate inherit";
+                        break;
+                    case "I":
+                        permission = "permission inherited from the parent container";
+                        break;
+                    // list of basic access permissions
+                    case "D":
+                        permission = "delete access";
+                        break;
+                    case "F":
+                        permission = "full access";
+                        break;
+                    case "N":
+                        permission = "no access";
+                        break;
+                    case "M":
+                        permission = "modify access";
+                        break;
+                    case "RX":
+                        permission = "read and execute access";
+                        break;
+                    case "R":
+                        permission = "read-only access";
+                        break;
+                    case "W":
+                        permission = "write-only access";
+                        break;
+                    case "":
+                        permission = "skip";
+                        break;
+                    default:
+                        permission = value;
+                        break;
+                }
+                if (permission == "skip") break;
+                else mappedValues.Add(permission);
+            }
+            return mappedValues;
+        }
+
+        // compare membership
+        private void button8_Click(object sender, EventArgs e)
+        {
+            string firstFile = ReturnFilePath();
+            string secondFile = ReturnFilePath();
+
+            List<string> csvAProperties = new List<string>();
+            List<string> csvBProperties = new List<string>();
+
+            List<MembershipReduced> A = new List<MembershipReduced>();
+            List<MembershipReduced> B = new List<MembershipReduced>();
+
+            using (var reader = new StreamReader(firstFile))
+            {
+                while (!reader.EndOfStream)
+                {
+                    var line = reader.ReadLine();
+                    var values = line.Split(',');
+                    A.Add(new MembershipReduced { Name = values[0], User = values[1] });
+                    csvAProperties.Add(values[2]);
+                }
+            }
+            using (var reader = new StreamReader(secondFile))
+            {
+
+                while (!reader.EndOfStream)
+                {
+                    var line = reader.ReadLine();
+                    var values = line.Split(',');
+
+                    B.Add(new MembershipReduced { Name = values[0], User = values[1] });
+                    csvBProperties.Add(values[2]);
+                }
+            }
+
+            var fileObject = new List<MembershipExtended>();
+
+            // check if A is in B
+            for (int i = 1; i < A.Count; i++)
+            {
+                for (int j = 1; j < B.Count; j++)
+                {
+                    if (B.Any(prod => prod.Name == A[i].Name && prod.User == A[i].User))
+                    {
+                        int index = B.FindIndex(x => (x.Name == A[i].Name) && (x.User == A[i].User));
+                        if (csvAProperties[i] == csvBProperties[index])
+                        {
+                            fileObject.Add(new MembershipExtended { Name = A[i].Name, User = A[i].User, Properties = csvAProperties[i], Matching = "Membership is the same" });
+                        }
+                        else
+                        {
+                            fileObject.Add(new MembershipExtended { Name = A[i].Name, User = A[i].User, Properties = csvAProperties[i], Matching = "Membership isn't the same" });
+                        }
+                        break;
+                    }
+                    else if (!B.Any(prod => prod.Name == A[i].Name && prod.User == A[i].User))
+                    {
+                        fileObject.Add(new MembershipExtended { Name = A[i].Name, User = A[i].User, Properties = csvAProperties[i], Matching = "Membership not in second FS" });
+                        break;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                }
+            }
+
+            // check if A is in B
+            for (int i = 1; i < B.Count; i++)
+            {
+                for (int j = 1; j < A.Count; j++)
+                {
+                    if (A.Any(prod => prod.Name == B[i].Name && prod.User == B[i].User))
+                    {
+                        int index = A.FindIndex(x => (x.Name == B[i].Name) && (x.User == B[i].User));
+                        if (csvBProperties[i] == csvAProperties[index])
+                        {
+                            fileObject.Add(new MembershipExtended { Name = B[i].Name, User = B[i].User, Properties = csvBProperties[i], Matching = "Membership is the same" });
+                        }
+                        else
+                        {
+                            fileObject.Add(new MembershipExtended { Name = B[i].Name, User = B[i].User, Properties = csvBProperties[i], Matching = "Membership isn't the same" });
+                        }
+                        break;
+                    }
+                    else if (!A.Any(prod => prod.Name == B[i].Name && prod.User == B[i].User))
+                    {
+                        fileObject.Add(new MembershipExtended { Name = B[i].Name, User = B[i].User, Properties = csvBProperties[i], Matching = "Membership not in first FS" });
+                        break;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                }
+            }
+
+            var noDupes = fileObject.GroupBy(x => new { x.Name, x.User, x.Properties }).Select(x => x.First()).ToList();
+            string[] dirs = firstFile.Split('\\');
+            List<string> list = new List<string>(dirs);
+            list.RemoveAt(dirs.Length - 1);
+            dirs = list.ToArray();
+            string path = String.Join("\\", dirs);
+
+            WriteCsv(noDupes, path);
+        }
+
+        public void WriteCsv(List<MembershipExtended> fileObject, string path)
+        {
+            path += "\\membershipCompare.csv";
+
+            using (var stream = File.OpenWrite(path))
+            using (var writer = new StreamWriter(stream, Encoding.GetEncoding("ISO-8859-1")))
+            using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
+            {
+                csv.WriteRecords(fileObject);
+            }
+        }
+
+        public class MembershipReduced : IEquatable<MembershipReduced>
+        {
+            public string Name { get; set; }
+            public string User { get; set; }
+
+            public bool Equals(MembershipReduced other)
+            {
+                return this.Name == other.Name && this.User == other.User;
+            }
+
+        }
+
+        public class MembershipExtended : Membership
+        {
+            public string Matching { get; set; }
+        }
+
+        public class Membership
+        {
+            public string Name { get; set; }
+            public string User { get; set; }
+            public string Properties { get; set; }
+        }
+
+        public class InfoFileExtended : InfoFile
+        {
+            public string Matching { get; set; }
+        }
+
         public class FileHashExtended : FileHash
         {
-            public bool Matching { get; set; }
+            public string Matching { get; set; }
+
+            public string FileName { get; set; }
         }
 
         public class FSInfo
@@ -624,6 +1108,7 @@ namespace File_checker
 
             #endregion
         }
+
 
     }
 }
